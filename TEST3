@@ -1,0 +1,1550 @@
+local TargetKey = "KhoiReal"
+
+local UIS    = game:GetService("UserInputService")
+local TW     = game:GetService("TweenService")
+local RS     = game:GetService("RunService")
+local PL     = game:GetService("Players")
+local RPS    = game:GetService("ReplicatedStorage")
+local SG_svc = game:GetService("StarterGui")
+local TPS    = game:GetService("TeleportService")
+local LIGHT  = game:GetService("Lighting")
+local LP     = PL.LocalPlayer
+
+pcall(function()
+    if syn and syn.protect_gui then
+        pcall(function() syn.protect_gui(game:GetService("CoreGui")) end)
+    elseif protect_gui then
+        pcall(function() protect_gui(game:GetService("CoreGui")) end)
+    end
+end)
+
+local function ResolveCoreGui()
+    local ok, hui = pcall(function()
+        return (type(gethui) == "function") and gethui() or nil
+    end)
+    if ok and hui then return hui end
+    return LP:WaitForChild("PlayerGui")
+end
+
+local CG = ResolveCoreGui()
+if not LP.Character then LP.CharacterAdded:Wait() end
+
+for _, n in ipairs({"KhoiFarmKeyUI", "KhoiFarmMainUI"}) do
+    for _, parent in ipairs({CG, LP:FindFirstChild("PlayerGui")}) do
+        if parent then
+            local o = parent:FindFirstChild(n)
+            if o then pcall(function() o:Destroy() end) end
+        end
+    end
+end
+task.wait(0.15)
+
+local CONNECTIONS = {}
+local FLAGS = {
+    PunchFarm=false, ToolFarm=false, KillAura=false, KillList=false, Range=25,
+    Rebirth=false, AutoSize1=false, AutoSprint=false, InfiniteJump=false,
+    AntiAFK=false, AntiFling=false, LockPos=false, SpeedValue=16,
+    AutoCrystal=false, CrystalName="Blue Crystal", AutoSell=false,
+    AutoUpgradeStrength=false, AutoUpgradeDurability=false, AutoUpgradeAgility=false,
+    AutoGym=false, GymName="Muscle King Gym", AutoCollectGift=false,
+    SkyFarm=false, SkyY=5000,
+    AutoWeight=false, AutoPushUps=false, AutoSitUps=false, AutoHandstands=false,
+    AdminDetect=false, WalkWater=false, AutoBrawl=false, AutoProtein=false,
+    AntiRagdoll=false, NoClip=false, FullBright=false,
+    ShowPets=false, ShowOtherPets=false, HideStatFrames=false,
+    AutoSpinWheel=false, ChangeTime="Day",
+    RemoveAttackAnim=false, NaNPlusEgg=false, DisableEatingEggs=false,
+    AutoLift=false, AutoPunchNoAnim=false, AutoEgg=false, AutoKing=false,
+    Exercise="Pushup", AutoExercise=false,
+    Rock="Jungle Rock", AutoRock=false,
+    PushupJungleRock=false, PushupMuscleKingRock=false, PushupLegendsRock=false,
+    EatAllEggs=false, EatAllBoosts=false,
+    SelectedPet="", BuyPet=false, SelectedAura="", BuyAura=false,
+    SelectedPlayer="", Spectate=false, LendDamage=false, LendDamageTarget="",
+    KillEveryone=false, FarmEvilKarma=false, FarmGoodKarma=false,
+    WhitelistFriends=false,
+    AutoRebirthTarget=0, UseRebirthTarget=false,
+    GiftProteinTarget="", GiftProteinAmount=0, GiftProtein=false,
+    GiftShakeTarget="", GiftShakeAmount=0, GiftShake=false,
+}
+local UNLOADED = false
+local START_TICK = tick()
+
+local function track(c)
+    if c then table.insert(CONNECTIONS, c) end
+    return c
+end
+local function disconnectAll()
+    for _, c in ipairs(CONNECTIONS) do pcall(function() c:Disconnect() end) end
+    CONNECTIONS = {}
+end
+local function DeepFind(p, name)
+    local f = p:FindFirstChild(name)
+    if f then return f end
+    for _, v in pairs(p:GetDescendants()) do
+        if v.Name == name then return v end
+    end
+end
+
+local function GetREvents() return RPS:FindFirstChild("rEvents") end
+
+local _cache = {}
+local function ResolveRemote(key, candidates)
+    if _cache[key] and _cache[key].Parent then return _cache[key] end
+    local r = GetREvents()
+    if r then
+        for _, n in ipairs(candidates) do
+            local f = r:FindFirstChild(n)
+            if f then _cache[key] = f; return f end
+        end
+    end
+    for _, n in ipairs(candidates) do
+        local f = DeepFind(RPS, n)
+        if f then _cache[key] = f; return f end
+    end
+    return nil
+end
+
+local function GetMuscleEvent() return ResolveRemote("muscle", {"muscleEvent", "MuscleEvent"}) end
+local function GetRebirthRemote() return ResolveRemote("rebirth", {"rebirthRemote", "RebirthRemote"}) end
+local function GetCrystalRemote() return ResolveRemote("crystal", {"openCrystalRemote"}) end
+local function GetSellRemote() return ResolveRemote("sell", {"sellAllEvent", "sellEvent", "sellAllRemote"}) end
+local function GetUpgradeRemote() return ResolveRemote("upgrade", {"upgradeEvent", "upgradeRemote", "upgradeStatEvent"}) end
+local function GetGymRemote() return ResolveRemote("gym", {"changeGymEvent", "changeCurrentGymEvent", "changeGymRemote"}) end
+local function GetGiftRemote() return ResolveRemote("gift", {"collectGiftEvent", "giftEvent"}) end
+local function GetPetRemote() return ResolveRemote("pet", {"buyPetEvent", "petEvent", "equipPetEvent"}) end
+local function GetAuraRemote() return ResolveRemote("aura", {"buyAuraEvent", "auraEvent"}) end
+local function GetEggRemote() return ResolveRemote("egg", {"eatEggEvent", "eggEvent"}) end
+local function GetBoostRemote() return ResolveRemote("boost", {"eatBoostEvent", "boostEvent"}) end
+local function GetWheelRemote() return ResolveRemote("wheel", {"spinWheelEvent", "fortuneWheelEvent"}) end
+local function GetTimeRemote() return ResolveRemote("time", {"changeTimeEvent", "setTimeEvent"}) end
+local function GetGiftPlayerRemote() return ResolveRemote("giftPlayer", {"giftPlayerEvent", "sendGiftEvent"}) end
+
+local function GetChar() return LP.Character end
+local function GetHRP()
+    local c = GetChar()
+    return c and c:FindFirstChild("HumanoidRootPart")
+end
+local function GetHum()
+    local c = GetChar()
+    return c and c:FindFirstChildOfClass("Humanoid")
+end
+local function GetPlayerFromName(n)
+    n = tostring(n or "")
+    for _, p in ipairs(PL:GetPlayers()) do
+        if p.Name:lower() == n:lower() or p.DisplayName:lower() == n:lower() then
+            return p
+        end
+    end
+end
+local function GetRootOfPlayer(p)
+    if not p or not p.Character then return nil end
+    return p.Character:FindFirstChild("HumanoidRootPart")
+end
+local function IsFriend(p)
+    if not p or p == LP then return false end
+    local ok, result = pcall(function() return LP:IsFriendsWith(p.UserId) end)
+    return ok and result
+end
+local function Notify(text)
+    pcall(function()
+        SG_svc:SetCore("SendNotification", {Title="KhoiFarm", Text=tostring(text), Duration=3})
+    end)
+end
+local function Fire(remote, ...)
+    if not remote then return end
+    pcall(function()
+        if remote:IsA("RemoteFunction") then remote:InvokeServer(...)
+        else remote:FireServer(...) end
+    end)
+end
+
+local function MakeDraggable(frame)
+    local dragging = false
+    local startPos, startFramePos
+    track(frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            startPos = input.Position
+            startFramePos = frame.Position
+        end
+    end))
+    track(frame.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end))
+    track(UIS.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - startPos
+            frame.Position = UDim2.new(
+                startFramePos.X.Scale, startFramePos.X.Offset + delta.X,
+                startFramePos.Y.Scale, startFramePos.Y.Offset + delta.Y
+            )
+        end
+    end))
+end
+
+task.spawn(function()
+    while not UNLOADED do
+        if FLAGS.SkyFarm then
+            pcall(function()
+                local h = GetHRP()
+                if h then
+                    h.CFrame = CFrame.new(h.Position.X, FLAGS.SkyY, h.Position.Z)
+                    h.Velocity = Vector3.new(0, 0, 0)
+                end
+            end)
+        end
+        task.wait(1)
+    end
+end)
+
+task.spawn(function()
+    while not UNLOADED do
+        if FLAGS.AdminDetect then
+            for _, p in ipairs(PL:GetPlayers()) do
+                if p ~= LP then
+                    local ok, rank = pcall(function() return p:GetRankInGroup(4112344) end)
+                    if ok and rank and rank > 0 then
+                        Notify("Admin: "..p.Name.." — Rejoin!")
+                        pcall(function() TPS:Teleport(game.PlaceId) end)
+                        break
+                    end
+                end
+            end
+        end
+        task.wait(8)
+    end
+end)
+
+task.spawn(function()
+    while not UNLOADED do
+        pcall(function()
+            local m = GetMuscleEvent()
+            if m then
+                if FLAGS.AutoPushUps    then Fire(m, "pushUp", "leftHand") end
+                if FLAGS.AutoSitUps     then Fire(m, "sitUp", "leftHand") end
+                if FLAGS.AutoHandstands then Fire(m, "handstand", "leftHand") end
+                if FLAGS.AutoWeight     then Fire(m, "punch", FLAGS.Rock) end
+                if FLAGS.AutoExercise then Fire(m, FLAGS.Exercise, "leftHand") end
+                if FLAGS.AutoRock then Fire(m, "punch", FLAGS.Rock) end
+                if FLAGS.PushupJungleRock then
+                    Fire(m, "pushUp", "leftHand")
+                    Fire(m, "punch", "Jungle Rock")
+                end
+                if FLAGS.PushupMuscleKingRock then
+                    Fire(m, "pushUp", "leftHand")
+                    Fire(m, "punch", "Muscle King Rock")
+                end
+                if FLAGS.PushupLegendsRock then
+                    Fire(m, "pushUp", "leftHand")
+                    Fire(m, "punch", "Legends Rock")
+                end
+                if FLAGS.AutoPunchNoAnim then
+                    Fire(m, "punch", "leftHand")
+                    Fire(m, "punch", "rightHand")
+                end
+                if FLAGS.AutoLift then Fire(m, "autoLift") end
+                if FLAGS.NaNPlusEgg then Fire(m, "nanEgg") end
+            end
+        end)
+        task.wait(0.15)
+    end
+end)
+
+task.spawn(function()
+    while not UNLOADED do
+        if FLAGS.AutoEgg then
+            pcall(function()
+                local m = GetMuscleEvent()
+                if m then Fire(m, "autoEgg") end
+            end)
+        end
+        task.wait(30*60)
+    end
+end)
+
+task.spawn(function()
+    while not UNLOADED do
+        if FLAGS.AutoKing then
+            pcall(function()
+                local m = GetMuscleEvent()
+                if m then Fire(m, "autoKing") end
+            end)
+        end
+        task.wait(10)
+    end
+end)
+
+task.spawn(function()
+    while not UNLOADED do
+        if FLAGS.AutoBrawl then
+            pcall(function()
+                local m = GetMuscleEvent()
+                if m then Fire(m, "joinBrawl") end
+            end)
+        end
+        task.wait(3)
+    end
+end)
+
+task.spawn(function()
+    while not UNLOADED do
+        if FLAGS.AutoProtein then
+            pcall(function()
+                local bp = LP:FindFirstChild("Backpack")
+                local char = GetChar()
+                if bp and char then
+                    for _, v in ipairs(bp:GetChildren()) do
+                        if v:IsA("Tool") and v.Name:lower():find("protein") then
+                            v.Parent = char
+                            task.wait(0.1)
+                            pcall(function() v:Activate() end)
+                            break
+                        end
+                    end
+                end
+            end)
+        end
+        task.wait(5)
+    end
+end)
+
+task.spawn(function()
+    while not UNLOADED do
+        if FLAGS.EatAllEggs then
+            pcall(function()
+                local bp = LP:FindFirstChild("Backpack")
+                local char = GetChar()
+                if bp and char and not FLAGS.DisableEatingEggs then
+                    for _, v in ipairs(bp:GetChildren()) do
+                        if v:IsA("Tool") and (v.Name:lower():find("egg") or v.Name:lower():find("boost")) then
+                            v.Parent = char
+                            task.wait(0.05)
+                            pcall(function() v:Activate() end)
+                        end
+                    end
+                end
+                local m = GetMuscleEvent()
+                if m then Fire(m, "eatAllEggs") end
+            end)
+        end
+        if FLAGS.EatAllBoosts then
+            pcall(function()
+                local er = GetEggRemote()
+                if er then Fire(er, "allBoosts") end
+            end)
+        end
+        task.wait(3)
+    end
+end)
+
+task.spawn(function()
+    while not UNLOADED do
+        if FLAGS.BuyPet and FLAGS.SelectedPet ~= "" then
+            pcall(function()
+                local r = GetPetRemote()
+                if r then Fire(r, "buy", FLAGS.SelectedPet) end
+            end)
+        end
+        if FLAGS.BuyAura and FLAGS.SelectedAura ~= "" then
+            pcall(function()
+                local r = GetAuraRemote()
+                if r then Fire(r, "buy", FLAGS.SelectedAura) end
+            end)
+        end
+        task.wait(2)
+    end
+end)
+
+task.spawn(function()
+    while not UNLOADED do
+        if FLAGS.GiftProtein and FLAGS.GiftProteinTarget ~= "" then
+            pcall(function()
+                local r = GetGiftPlayerRemote()
+                if r then Fire(r, "protein", FLAGS.GiftProteinTarget, FLAGS.GiftProteinAmount) end
+            end)
+        end
+        if FLAGS.GiftShake and FLAGS.GiftShakeTarget ~= "" then
+            pcall(function()
+                local r = GetGiftPlayerRemote()
+                if r then Fire(r, "shake", FLAGS.GiftShakeTarget, FLAGS.GiftShakeAmount) end
+            end)
+        end
+        task.wait(3)
+    end
+end)
+
+task.spawn(function()
+    while not UNLOADED do
+        if FLAGS.AutoSpinWheel then
+            pcall(function()
+                local r = GetWheelRemote()
+                if r then Fire(r) end
+            end)
+        end
+        task.wait(30)
+    end
+end)
+
+task.spawn(function()
+    local lastTime = ""
+    while not UNLOADED do
+        if FLAGS.ChangeTime ~= lastTime then
+            lastTime = FLAGS.ChangeTime
+            pcall(function()
+                local r = GetTimeRemote()
+                if r then Fire(r, FLAGS.ChangeTime) end
+                if FLAGS.ChangeTime == "Day" then LIGHT.ClockTime = 14
+                elseif FLAGS.ChangeTime == "Night" then LIGHT.ClockTime = 0
+                elseif FLAGS.ChangeTime == "Sunset" then LIGHT.ClockTime = 18
+                end
+            end)
+        end
+        task.wait(1)
+    end
+end)
+
+track(RS.Stepped:Connect(function()
+    if not FLAGS.WalkWater then return end
+    local h = GetHRP()
+    if h and h.Position.Y < 1 then
+        pcall(function() h.CFrame = CFrame.new(h.Position.X, 2, h.Position.Z) end)
+    end
+end))
+
+track(RS.Heartbeat:Connect(function()
+    if not FLAGS.AntiRagdoll then return end
+    local hum = GetHum()
+    if hum then
+        pcall(function()
+            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+            hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+            hum:SetStateEnabled(Enum.HumanoidStateType.Physics, false)
+        end)
+    end
+end))
+
+track(RS.Stepped:Connect(function()
+    if not FLAGS.NoClip then return end
+    local c = GetChar()
+    if c then
+        for _, v in ipairs(c:GetDescendants()) do
+            if v:IsA("BasePart") and v.CanCollide then v.CanCollide = false end
+        end
+    end
+end))
+
+local _origLight
+track(RS.Heartbeat:Connect(function()
+    if FLAGS.FullBright then
+        if not _origLight then
+            _origLight = {Brightness=LIGHT.Brightness, ClockTime=LIGHT.ClockTime,
+                          FogEnd=LIGHT.FogEnd, Ambient=LIGHT.Ambient}
+        end
+        LIGHT.Brightness = 3
+        LIGHT.FogEnd = 100000
+        LIGHT.Ambient = Color3.fromRGB(178,178,178)
+    elseif _origLight then
+        for k, v in pairs(_origLight) do LIGHT[k] = v end
+        _origLight = nil
+    end
+end))
+
+local _statFramesHidden = false
+task.spawn(function()
+    while not UNLOADED do
+        pcall(function()
+            local pg = LP:FindFirstChild("PlayerGui")
+            if FLAGS.HideStatFrames then
+                if pg and not _statFramesHidden then
+                    _statFramesHidden = true
+                    for _, v in ipairs(pg:GetDescendants()) do
+                        if (v:IsA("BillboardGui") or v:IsA("SurfaceGui")) and v.Name:lower():find("stat") then
+                            v.Enabled = false
+                        end
+                    end
+                end
+            elseif _statFramesHidden then
+                _statFramesHidden = false
+            end
+        end)
+        task.wait(1)
+    end
+end)
+
+task.spawn(function()
+    while not UNLOADED do
+        pcall(function()
+            for _, p in ipairs(PL:GetPlayers()) do
+                if p.Character then
+                    for _, v in ipairs(p.Character:GetChildren()) do
+                        if v:IsA("Model") and (v.Name:lower():find("pet") or v.Name:lower():find("companion")) then
+                            local isMine = (p == LP)
+                            local show = (isMine and FLAGS.ShowPets) or ((not isMine) and FLAGS.ShowOtherPets)
+                            for _, part in ipairs(v:GetDescendants()) do
+                                if part:IsA("BasePart") or part:IsA("Decal") then
+                                    part.Transparency = show and 0 or 1
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+        task.wait(1)
+    end
+end)
+
+track(RS.Heartbeat:Connect(function()
+    if not FLAGS.RemoveAttackAnim then return end
+    pcall(function()
+        local c = GetChar()
+        if c then
+            local anim = c:FindFirstChildOfClass("Animator")
+            if anim then
+                for _, t in ipairs(anim:GetPlayingAnimationTracks()) do
+                    if t.Name:lower():find("punch") or t.Name:lower():find("attack") then
+                        t:Stop()
+                    end
+                end
+            end
+        end
+    end)
+end))
+
+track(RS.Heartbeat:Connect(function()
+    if not FLAGS.Spectate then return end
+    local p = GetPlayerFromName(FLAGS.SelectedPlayer)
+    if p and p.Character then
+        local th = GetRootOfPlayer(p)
+        local cam = workspace.CurrentCamera
+        if th and cam then
+            pcall(function() cam.CFrame = CFrame.new(th.Position + Vector3.new(0,5,10), th.Position) end)
+        end
+    end
+end))
+
+task.spawn(function()
+    while not UNLOADED do
+        if FLAGS.LendDamage and FLAGS.LendDamageTarget ~= "" then
+            pcall(function()
+                local target = GetPlayerFromName(FLAGS.LendDamageTarget)
+                if target and target.Character then
+                    local trp = target.Character:FindFirstChild("HumanoidRootPart")
+                    local myrp = GetHRP()
+                    if trp and myrp then
+                        local dist = (myrp.Position - trp.Position).Magnitude
+                        if dist < 30 then
+                            local m = GetMuscleEvent()
+                            if m then
+                                Fire(m, "punch", "leftHand")
+                                Fire(m, "punch", "rightHand")
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+        task.wait(0.1)
+    end
+end)
+
+local lastTool = 0
+local function ToolFarm()
+    if not FLAGS.ToolFarm then return end
+    if tick() - lastTool < 0.15 then return end
+    lastTool = tick()
+    local char = GetChar()
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return end
+    local equipped = nil
+    for _, v in ipairs(char:GetChildren()) do
+        if v:IsA("Tool") then equipped = v; break end
+    end
+    if not equipped then
+        local bp = LP:FindFirstChild("Backpack")
+        if bp then
+            for _, v in ipairs(bp:GetChildren()) do
+                if v:IsA("Tool") then
+                    pcall(function() hum:EquipTool(v) end)
+                    return
+                end
+            end
+        end
+        return
+    end
+    pcall(function() equipped:Activate() end)
+end
+
+local lastPunch = 0
+local function PunchFarm()
+    if not FLAGS.PunchFarm then return end
+    if tick() - lastPunch < 0.1 then return end
+    lastPunch = tick()
+    local hum = GetHum()
+    if not hum or hum.Health <= 0 then return end
+    local m = GetMuscleEvent()
+    if not m then return end
+    Fire(m, "punch", "leftHand")
+    Fire(m, "punch", "rightHand")
+end
+
+local lastKill = 0
+local function KillAura()
+    if not (FLAGS.KillAura or FLAGS.KillList or FLAGS.KillEveryone or FLAGS.FarmEvilKarma or FLAGS.FarmGoodKarma) then return end
+    if tick() - lastKill < 0.08 then return end
+    lastKill = tick()
+    local h = GetHRP()
+    if not h then return end
+    local m = GetMuscleEvent()
+    if not m then return end
+
+    if FLAGS.KillEveryone then
+        Fire(m, "punch", "leftHand")
+        Fire(m, "punch", "rightHand")
+        return
+    end
+
+    for _, p in ipairs(PL:GetPlayers()) do
+        if p ~= LP and p.Character then
+            if FLAGS.WhitelistFriends and IsFriend(p) then continue end
+            local th = p.Character:FindFirstChild("HumanoidRootPart")
+            local hm = p.Character:FindFirstChildOfClass("Humanoid")
+            if th and hm and hm.Health > 0 then
+                local d = (h.Position - th.Position).Magnitude
+                local should = false
+                if FLAGS.KillList and d < 20 then should = true end
+                if FLAGS.KillAura and d < FLAGS.Range then should = true end
+                if (FLAGS.FarmEvilKarma or FLAGS.FarmGoodKarma) and d < 30 then should = true end
+                if should then
+                    Fire(m, "punch", "leftHand")
+                    Fire(m, "punch", "rightHand")
+                    break
+                end
+            end
+        end
+    end
+end
+
+local antiAfkConn
+local function StartAntiAFK()
+    if antiAfkConn then antiAfkConn:Disconnect(); antiAfkConn = nil end
+    antiAfkConn = track(LP.Idled:Connect(function()
+        if not FLAGS.AntiAFK then return end
+        pcall(function()
+            local vu = game:GetService("VirtualUser")
+            vu:CaptureController()
+            vu:ClickButton2(Vector2.new())
+        end)
+    end))
+end
+
+local function DumpRemotes()
+    print("=========== REMOTE LIST ===========")
+    local count = 0
+    for _, v in pairs(RPS:GetDescendants()) do
+        if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+            count = count + 1
+            print("["..v.ClassName.."] "..v:GetFullName())
+        end
+    end
+    print("Total: "..count)
+    Notify("Đã in "..count.." remote vào F9!")
+end
+
+local function DumpTools()
+    print("=========== TOOL LIST ===========")
+    local bp = LP:FindFirstChild("Backpack")
+    if bp then
+        for _, v in pairs(bp:GetChildren()) do
+            if v:IsA("Tool") then print("[Bag] "..v.Name) end
+        end
+    end
+    local char = GetChar()
+    if char then
+        for _, v in pairs(char:GetChildren()) do
+            if v:IsA("Tool") then print("[Equipped] "..v.Name) end
+        end
+    end
+    Notify("Đã in Tool vào F9!")
+end
+
+local function MakeUI()
+    local SG = Instance.new("ScreenGui")
+    SG.Name = "KhoiFarmMainUI"
+    SG.ResetOnSpawn = false
+    SG.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    SG.DisplayOrder = 999
+    pcall(function() SG.IgnoreGuiInset = true end)
+    local okp = pcall(function() SG.Parent = CG end)
+    if not okp then SG.Parent = LP:WaitForChild("PlayerGui") end
+
+    local function DoUnload()
+        if UNLOADED then return end
+        UNLOADED = true
+        disconnectAll()
+        if antiAfkConn then antiAfkConn:Disconnect(); antiAfkConn = nil end
+        local h = GetHRP()
+        if h then
+            pcall(function() h.CustomPhysicalProperties = nil end)
+            pcall(function() h.Anchored = false end)
+        end
+        local hum = GetHum()
+        if hum then hum.WalkSpeed = 16 end
+        pcall(function() SG:Destroy() end)
+    end
+
+    local Main = Instance.new("Frame")
+    Main.Size = UDim2.new(0, 620, 0, 440)
+    Main.Position = UDim2.new(0.5, -310, 0.5, -220)
+    Main.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    Main.BorderSizePixel = 0
+    Main.Active = true
+    Main.Parent = SG
+    Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
+    local MS = Instance.new("UIStroke", Main)
+    MS.Color = Color3.fromRGB(255, 0, 0); MS.Thickness = 2
+    MakeDraggable(Main)
+
+    local TB = Instance.new("Frame", Main)
+    TB.Size = UDim2.new(1, 0, 0, 40)
+    TB.BackgroundColor3 = Color3.fromRGB(30, 0, 0)
+    TB.BorderSizePixel = 0
+    Instance.new("UICorner", TB).CornerRadius = UDim.new(0, 10)
+
+    local TL = Instance.new("TextLabel", TB)
+    TL.Size = UDim2.new(1, -160, 1, 0)
+    TL.Position = UDim2.new(0, 15, 0, 0)
+    TL.BackgroundTransparency = 1
+    TL.Text = "KhoiFarm | Main"
+    TL.TextColor3 = Color3.fromRGB(255, 50, 50)
+    TL.Font = Enum.Font.GothamBold; TL.TextSize = 18
+    TL.TextXAlignment = Enum.TextXAlignment.Left
+
+    local function mkBtn(par, size, pos, txt, col)
+        local b = Instance.new("TextButton", par)
+        b.Size = size; b.Position = pos
+        b.BackgroundColor3 = col
+        b.TextColor3 = Color3.fromRGB(255,255,255)
+        b.Text = txt
+        b.Font = Enum.Font.GothamBold; b.TextSize = 12
+        b.BorderSizePixel = 0
+        Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+        return b
+    end
+    local UBtn = mkBtn(TB, UDim2.new(0,60,0,30), UDim2.new(1,-160,0,5), "UNLOAD", Color3.fromRGB(80,0,0))
+    local XBtn = mkBtn(TB, UDim2.new(0,30,0,30), UDim2.new(1,-40,0,5), "X", Color3.fromRGB(60,0,0))
+    local MBtn = mkBtn(TB, UDim2.new(0,30,0,30), UDim2.new(1,-75,0,5), "-", Color3.fromRGB(60,0,0))
+
+    local SB = Instance.new("ScrollingFrame", Main)
+    SB.Size = UDim2.new(0, 130, 1, -50)
+    SB.Position = UDim2.new(0, 5, 0, 45)
+    SB.BackgroundColor3 = Color3.fromRGB(20,20,20)
+    SB.BorderSizePixel = 0
+    SB.ScrollBarThickness = 4
+    SB.ScrollBarImageColor3 = Color3.fromRGB(255,0,0)
+    SB.CanvasSize = UDim2.new(0,0,0,0)
+    pcall(function() SB.AutomaticCanvasSize = Enum.AutomaticSize.Y end)
+    Instance.new("UICorner", SB).CornerRadius = UDim.new(0, 6)
+    local sbLay = Instance.new("UIListLayout", SB)
+    sbLay.SortOrder = Enum.SortOrder.LayoutOrder
+    sbLay.Padding = UDim.new(0, 6)
+    local sbPad = Instance.new("UIPadding", SB)
+    sbPad.PaddingTop = UDim.new(0, 5); sbPad.PaddingBottom = UDim.new(0, 5)
+    sbPad.PaddingLeft = UDim.new(0, 5); sbPad.PaddingRight = UDim.new(0, 5)
+
+    local CT = Instance.new("Frame", Main)
+    CT.Size = UDim2.new(1, -145, 1, -50)
+    CT.Position = UDim2.new(0, 140, 0, 45)
+    CT.BackgroundColor3 = Color3.fromRGB(20,20,20)
+    CT.BorderSizePixel = 0
+    Instance.new("UICorner", CT).CornerRadius = UDim.new(0, 6)
+
+    local Mini = Instance.new("Frame", SG)
+    Mini.Size = UDim2.new(0, 115, 0, 45)
+    Mini.Position = UDim2.new(0, 15, 0, 15)
+    Mini.BackgroundColor3 = Color3.fromRGB(15,15,15)
+    Mini.BorderSizePixel = 0
+    Mini.Visible = false
+    Mini.Active = true
+    Instance.new("UICorner", Mini).CornerRadius = UDim.new(0, 10)
+    local MiniS = Instance.new("UIStroke", Mini)
+    MiniS.Color = Color3.fromRGB(255,0,0); MiniS.Thickness = 2
+    MakeDraggable(Mini)
+
+    local MiniL = Instance.new("TextLabel", Mini)
+    MiniL.Size = UDim2.new(0.6,0,1,0); MiniL.Position = UDim2.new(0.05,0,0,0)
+    MiniL.BackgroundTransparency = 1
+    MiniL.Text = "Khoi"; MiniL.TextColor3 = Color3.fromRGB(255,50,50)
+    MiniL.Font = Enum.Font.GothamBold; MiniL.TextSize = 20
+    MiniL.TextXAlignment = Enum.TextXAlignment.Left
+    local PBtn = Instance.new("TextButton", Mini)
+    PBtn.Size = UDim2.new(0.28,0,0.6,0); PBtn.Position = UDim2.new(0.68,0,0.2,0)
+    PBtn.BackgroundColor3 = Color3.fromRGB(200,0,0)
+    PBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    PBtn.Text = "+"; PBtn.Font = Enum.Font.GothamBold; PBtn.TextSize = 20
+    PBtn.BorderSizePixel = 0
+
+    MBtn.MouseButton1Click:Connect(function() Main.Visible=false; Mini.Visible=true end)
+    PBtn.MouseButton1Click:Connect(function() Main.Visible=true; Mini.Visible=false end)
+    XBtn.MouseButton1Click:Connect(DoUnload)
+    UBtn.MouseButton1Click:Connect(function() DoUnload(); Notify("Đã unload KhoiFarm.") end)
+
+    local Tabs = {}
+    local function NewTab(name)
+        local btn = Instance.new("TextButton", SB)
+        btn.Size = UDim2.new(1, 0, 0, 32)
+        btn.BackgroundColor3 = Color3.fromRGB(35,0,0)
+        btn.TextColor3 = Color3.fromRGB(255,255,255)
+        btn.Text = name
+        btn.Font = Enum.Font.Gotham; btn.TextSize = 13; btn.BorderSizePixel = 0
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+
+        local page = Instance.new("ScrollingFrame", CT)
+        page.Size = UDim2.new(1,0,1,0)
+        page.BackgroundTransparency = 1
+        page.BorderSizePixel = 0
+        page.ScrollBarThickness = 4
+        page.ScrollBarImageColor3 = Color3.fromRGB(255,0,0)
+        page.CanvasSize = UDim2.new(0,0,0,0)
+        pcall(function() page.AutomaticCanvasSize = Enum.AutomaticSize.Y end)
+        page.Visible = false
+
+        local lay = Instance.new("UIListLayout", page)
+        lay.SortOrder = Enum.SortOrder.LayoutOrder
+        lay.Padding = UDim.new(0, 6)
+        local pad = Instance.new("UIPadding", page)
+        pad.PaddingTop=UDim.new(0,8); pad.PaddingBottom=UDim.new(0,8)
+        pad.PaddingLeft=UDim.new(0,8); pad.PaddingRight=UDim.new(0,8)
+
+        local tab = { Btn = btn, Page = page, SO = 0 }
+        local function Select()
+            for _, t in pairs(Tabs) do
+                t.Page.Visible = false
+                t.Btn.BackgroundColor3 = Color3.fromRGB(35,0,0)
+            end
+            page.Visible = true
+            btn.BackgroundColor3 = Color3.fromRGB(255,0,0)
+            TL.Text = "KhoiFarm | "..name
+        end
+        track(btn.MouseButton1Click:Connect(Select))
+        table.insert(Tabs, tab)
+        if #Tabs == 1 then Select() end
+
+        function tab.NewSection(sname)
+            tab.SO = tab.SO + 1
+            local mso = tab.SO
+            local sf = Instance.new("Frame", page)
+            sf.Size = UDim2.new(1,0,0,26)
+            sf.BackgroundTransparency = 1
+            sf.LayoutOrder = mso * 1000
+            local sl = Instance.new("TextLabel", sf)
+            sl.Size = UDim2.new(1,0,1,0); sl.BackgroundTransparency = 1
+            sl.Text = "› "..sname
+            sl.TextColor3 = Color3.fromRGB(255,50,50)
+            sl.Font = Enum.Font.GothamBold; sl.TextSize = 15
+            sl.TextXAlignment = Enum.TextXAlignment.Left
+
+            local so = { IO = 0 }
+            local function CC2(h)
+                so.IO = so.IO + 1
+                local c = Instance.new("Frame", page)
+                c.Size = UDim2.new(1,0,0,h)
+                c.BackgroundColor3 = Color3.fromRGB(30,30,30)
+                c.BorderSizePixel = 0
+                c.LayoutOrder = mso * 1000 + so.IO
+                Instance.new("UICorner", c).CornerRadius = UDim.new(0, 6)
+                local ss = Instance.new("UIStroke", c)
+                ss.Color = Color3.fromRGB(60,0,0); ss.Thickness = 1
+                return c
+            end
+
+            function so.Toggle(t, d, cb, default)
+                local c = CC2(40)
+                local tl = Instance.new("TextLabel", c)
+                tl.Size = UDim2.new(0.7,0,1,0); tl.Position = UDim2.new(0,12,0,0)
+                tl.BackgroundTransparency = 1
+                tl.Text = t
+                tl.TextColor3 = Color3.fromRGB(255,255,255)
+                tl.Font = Enum.Font.Gotham; tl.TextSize = 14
+                tl.TextXAlignment = Enum.TextXAlignment.Left
+
+                local tb = Instance.new("TextButton", c)
+                tb.Size = UDim2.new(0,45,0,22); tb.Position = UDim2.new(1,-57,0.5,-11)
+                tb.BackgroundColor3 = Color3.fromRGB(60,60,60)
+                tb.Text = ""; tb.BorderSizePixel = 0
+                Instance.new("UICorner", tb).CornerRadius = UDim.new(1,0)
+
+                local kn = Instance.new("Frame", tb)
+                kn.Size = UDim2.new(0,18,0,18)
+                kn.Position = UDim2.new(0,2,0.5,-9)
+                kn.BackgroundColor3 = Color3.fromRGB(255,255,255)
+                kn.BorderSizePixel = 0
+                Instance.new("UICorner", kn).CornerRadius = UDim.new(1,0)
+
+                local st = default or false
+                if st then
+                    tb.BackgroundColor3 = Color3.fromRGB(255,0,0)
+                    kn.Position = UDim2.new(1,-20,0.5,-9)
+                end
+                track(tb.MouseButton1Click:Connect(function()
+                    st = not st
+                    if st then
+                        tb.BackgroundColor3 = Color3.fromRGB(255,0,0)
+                        TW:Create(kn, TweenInfo.new(0.15), {Position=UDim2.new(1,-20,0.5,-9)}):Play()
+                    else
+                        tb.BackgroundColor3 = Color3.fromRGB(60,60,60)
+                        TW:Create(kn, TweenInfo.new(0.15), {Position=UDim2.new(0,2,0.5,-9)}):Play()
+                    end
+                    if cb then pcall(cb, st) end
+                end))
+            end
+
+            function so.Button(t, d, cb)
+                local c = CC2(40)
+                local b = Instance.new("TextButton", c)
+                b.Size = UDim2.new(1,0,1,0)
+                b.BackgroundColor3 = Color3.fromRGB(40,0,0)
+                b.Text = t
+                b.TextColor3 = Color3.fromRGB(255,255,255)
+                b.Font = Enum.Font.Gotham; b.TextSize = 14; b.BorderSizePixel = 0
+                Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+                track(b.MouseButton1Click:Connect(function()
+                    if cb then pcall(cb) end
+                end))
+            end
+
+            function so.Label(t)
+                local c = CC2(26)
+                local l = Instance.new("TextLabel", c)
+                l.Size = UDim2.new(1,-24,1,0); l.Position = UDim2.new(0,12,0,0)
+                l.BackgroundTransparency = 1
+                l.Text = t
+                l.TextColor3 = Color3.fromRGB(220,220,220)
+                l.Font = Enum.Font.Gotham; l.TextSize = 13
+                l.TextXAlignment = Enum.TextXAlignment.Left
+                return l
+            end
+
+            function so.Slider(t, d, mx, mn, cb)
+                local c = CC2(52)
+                local tl = Instance.new("TextLabel", c)
+                tl.Size = UDim2.new(1,-24,0,20); tl.Position = UDim2.new(0,12,0,4)
+                tl.BackgroundTransparency = 1
+                tl.Text = t..": "..mn
+                tl.TextColor3 = Color3.fromRGB(255,255,255)
+                tl.Font = Enum.Font.Gotham; tl.TextSize = 13
+                tl.TextXAlignment = Enum.TextXAlignment.Left
+
+                local tr = Instance.new("Frame", c)
+                tr.Size = UDim2.new(1,-24,0,8); tr.Position = UDim2.new(0,12,0,34)
+                tr.BackgroundColor3 = Color3.fromRGB(60,60,60)
+                tr.BorderSizePixel = 0
+                Instance.new("UICorner", tr).CornerRadius = UDim.new(1,0)
+
+                local fl = Instance.new("Frame", tr)
+                fl.Size = UDim2.new(0,0,1,0)
+                fl.BackgroundColor3 = Color3.fromRGB(255,0,0)
+                fl.BorderSizePixel = 0
+                Instance.new("UICorner", fl).CornerRadius = UDim.new(1,0)
+
+                local dragging = false
+                local function upX(x)
+                    if tr.AbsoluteSize.X <= 0 then return end
+                    local rx = math.clamp((x - tr.AbsolutePosition.X) / tr.AbsoluteSize.X, 0, 1)
+                    local v = math.floor(mn + (mx-mn)*rx)
+                    fl.Size = UDim2.new(rx,0,1,0)
+                    tl.Text = t..": "..v
+                    if cb then pcall(cb, v) end
+                end
+                track(tr.InputBegan:Connect(function(i)
+                    if i.UserInputType == Enum.UserInputType.MouseButton1
+                    or i.UserInputType == Enum.UserInputType.Touch then
+                        dragging = true; upX(i.Position.X)
+                    end
+                end))
+                track(tr.InputEnded:Connect(function(i)
+                    if i.UserInputType == Enum.UserInputType.MouseButton1
+                    or i.UserInputType == Enum.UserInputType.Touch then
+                        dragging = false
+                    end
+                end))
+                track(UIS.InputChanged:Connect(function(i)
+                    if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
+                    or i.UserInputType == Enum.UserInputType.Touch) then
+                        upX(i.Position.X)
+                    end
+                end))
+            end
+
+            function so.TextBox(t, d, cb, default)
+                local c = CC2(40)
+                local tl = Instance.new("TextLabel", c)
+                tl.Size = UDim2.new(0.5,0,1,0); tl.Position = UDim2.new(0,12,0,0)
+                tl.BackgroundTransparency = 1
+                tl.Text = t
+                tl.TextColor3 = Color3.fromRGB(255,255,255)
+                tl.Font = Enum.Font.Gotham; tl.TextSize = 13
+                tl.TextXAlignment = Enum.TextXAlignment.Left
+
+                local tb = Instance.new("TextBox", c)
+                tb.Size = UDim2.new(0,130,0,26)
+                tb.Position = UDim2.new(1,-142,0.5,-13)
+                tb.BackgroundColor3 = Color3.fromRGB(50,0,0)
+                tb.Text = default or ""
+                tb.PlaceholderText = d or "Nhập..."
+                tb.TextColor3 = Color3.fromRGB(255,255,255)
+                tb.Font = Enum.Font.Gotham; tb.TextSize = 12
+                tb.BorderSizePixel = 0
+                Instance.new("UICorner", tb).CornerRadius = UDim.new(0, 6)
+                track(tb.FocusLost:Connect(function()
+                    if cb then pcall(cb, tb.Text) end
+                end))
+            end
+
+            function so.Dropdown(t, options, cb)
+                local c = CC2(40)
+                local tl = Instance.new("TextLabel", c)
+                tl.Size = UDim2.new(0.5,0,1,0); tl.Position = UDim2.new(0,12,0,0)
+                tl.BackgroundTransparency = 1
+                tl.Text = t
+                tl.TextColor3 = Color3.fromRGB(255,255,255)
+                tl.Font = Enum.Font.Gotham; tl.TextSize = 13
+                tl.TextXAlignment = Enum.TextXAlignment.Left
+
+                local idx = 1
+                local function nxt()
+                    idx = idx % #options + 1
+                    local v = options[idx]
+                    tl.Text = t..": "..v
+                    if cb then pcall(cb, v) end
+                end
+                local b = Instance.new("TextButton", c)
+                b.Size = UDim2.new(0,130,0,26)
+                b.Position = UDim2.new(1,-142,0.5,-13)
+                b.BackgroundColor3 = Color3.fromRGB(50,0,0)
+                b.Text = "Đổi ▸"
+                b.TextColor3 = Color3.fromRGB(255,255,255)
+                b.Font = Enum.Font.Gotham; b.TextSize = 12; b.BorderSizePixel = 0
+                Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+                track(b.MouseButton1Click:Connect(nxt))
+                tl.Text = t..": "..options[1]
+                if cb then pcall(cb, options[1]) end
+            end
+
+            return so
+        end
+        return tab
+    end
+
+    local MT = NewTab("Main")
+    local MSec = MT.NewSection("User Settings")
+    MSec.Slider("Speed", "", 500, 16, function(v)
+        FLAGS.SpeedValue = v
+        if not FLAGS.AutoSprint then
+            local h = GetHum()
+            if h then h.WalkSpeed = v end
+        end
+    end)
+    MSec.Slider("FOV", "", 120, 70, function(v)
+        local cam = workspace.CurrentCamera
+        if cam then cam.FieldOfView = v end
+    end)
+
+    local PS = MT.NewSection("Protection and Visuals")
+    local afConn
+    PS.Toggle("Anti Fling", "", function(s)
+        FLAGS.AntiFling = s
+        if s then
+            if afConn then afConn:Disconnect() end
+            afConn = RS.Heartbeat:Connect(function()
+                local h = GetHRP()
+                if h and FLAGS.AntiFling then
+                    pcall(function()
+                        h.CustomPhysicalProperties = PhysicalProperties.new(0.01,0.01,0.01,0,0)
+                    end)
+                end
+            end)
+        else
+            if afConn then afConn:Disconnect(); afConn = nil end
+            local h = GetHRP()
+            if h then pcall(function() h.CustomPhysicalProperties = nil end) end
+        end
+    end)
+    PS.Toggle("Lock Position", "", function(s)
+        FLAGS.LockPos = s
+        local h = GetHRP()
+        if h then h.Anchored = s end
+    end)
+    PS.Toggle("Show Pets", "", function(s) FLAGS.ShowPets = s end)
+    PS.Toggle("Show Other Pets", "", function(s) FLAGS.ShowOtherPets = s end)
+    PS.Toggle("Hide Stat Frames", "", function(s) FLAGS.HideStatFrames = s end)
+    PS.Toggle("Walk on Water", "", function(s) FLAGS.WalkWater = s end)
+    PS.Toggle("Anti AFK", "", function(s) FLAGS.AntiAFK = s end)
+    PS.Toggle("Anti Ragdoll", "", function(s) FLAGS.AntiRagdoll = s end)
+    PS.Toggle("Admin Detector", "Tự rejoin khi gặp admin", function(s) FLAGS.AdminDetect = s end)
+    PS.Toggle("Full Bright", "", function(s) FLAGS.FullBright = s end)
+
+    local OthS = MT.NewSection("Other")
+    OthS.Toggle("Infinite Jump", "", function(s) FLAGS.InfiniteJump = s end)
+    track(UIS.JumpRequest:Connect(function()
+        if FLAGS.InfiniteJump then
+            local h = GetHum()
+            if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end
+        end
+    end))
+    OthS.Toggle("Auto Sprint", "", function(s)
+        FLAGS.AutoSprint = s
+        local h = GetHum()
+        if h then h.WalkSpeed = s and math.max(FLAGS.SpeedValue, 100) or FLAGS.SpeedValue end
+    end)
+    OthS.Toggle("No Clip", "", function(s)
+        FLAGS.NoClip = s
+        if not s then
+            local c = GetChar()
+            if c then
+                for _, v in ipairs(c:GetDescendants()) do
+                    if v:IsA("BasePart") then v.CanCollide = true end
+                end
+            end
+        end
+    end)
+    OthS.Toggle("Auto Spin Fortune Wheel", "", function(s) FLAGS.AutoSpinWheel = s end)
+    OthS.Dropdown("Change Time", {"Day", "Night", "Sunset"}, function(v) FLAGS.ChangeTime = v end)
+
+    local MiscS = MT.NewSection("Misc")
+    MiscS.Toggle("Remove Attack Animations", "", function(s) FLAGS.RemoveAttackAnim = s end)
+    MiscS.Toggle("Disable Eating Eggs", "", function(s) FLAGS.DisableEatingEggs = s end)
+    MiscS.Toggle("NaN + Egg", "", function(s) FLAGS.NaNPlusEgg = s end)
+
+    local KT = NewTab("Killing")
+    local TKS = KT.NewSection("Target Killing")
+    TKS.Toggle("Kill List", "Đấm người gần dưới 20 studs", function(s) FLAGS.KillList = s end)
+    TKS.Toggle("Kill Everyone", "Đấm mọi người", function(s) FLAGS.KillEveryone = s end)
+    TKS.Toggle("Whitelist Friends", "Không đấm bạn bè", function(s) FLAGS.WhitelistFriends = s end)
+
+    local KKS = KT.NewSection("Karma Killing")
+    KKS.Toggle("Farm Evil Karma", "", function(s) FLAGS.FarmEvilKarma = s end)
+    KKS.Toggle("Farm Good Karma", "", function(s) FLAGS.FarmGoodKarma = s end)
+
+    local AKS = KT.NewSection("Kill Aura")
+    AKS.Slider("Range", "", 100, 1, function(v) FLAGS.Range = v end)
+    AKS.Toggle("Kill Aura", "Tự đấm người trong tầm", function(s) FLAGS.KillAura = s end)
+
+    local SpecS = KT.NewSection("Spectate")
+    SpecS.TextBox("Player", "Tên player", function(v) FLAGS.SelectedPlayer = v end)
+    SpecS.Toggle("Spectate", "", function(s) FLAGS.Spectate = s end)
+
+    local LDS = KT.NewSection("Lend Damage")
+    LDS.TextBox("Target", "Tên player", function(v) FLAGS.LendDamageTarget = v end)
+    LDS.Toggle("Lend Damage", "Đấm hộ người khác (tầm 30)", function(s) FLAGS.LendDamage = s end)
+
+    local FT = NewTab("Farming")
+
+    local PSec = FT.NewSection("Auto Farm")
+    PSec.Toggle("Auto Tool Farm", "", function(s) FLAGS.ToolFarm = s end)
+    PSec.Toggle("Auto Punch Farm", "", function(s) FLAGS.PunchFarm = s end)
+    PSec.Toggle("Auto Punch (no anim)", "", function(s) FLAGS.AutoPunchNoAnim = s end)
+    PSec.Toggle("Auto Lift (Gamepass)", "", function(s) FLAGS.AutoLift = s end)
+    PSec.Toggle("Auto Egg (30 min)", "", function(s) FLAGS.AutoEgg = s end)
+    PSec.Toggle("Auto King", "Auto rebirth khi max", function(s) FLAGS.AutoKing = s end)
+    PSec.Toggle("Auto Brawl", "Tự tham gia brawl", function(s) FLAGS.AutoBrawl = s end)
+    PSec.Toggle("Auto Protein Egg", "Tự dùng protein egg", function(s) FLAGS.AutoProtein = s end)
+
+    local SkySec = FT.NewSection("Sky Farm")
+    SkySec.Slider("Độ cao Y", "", 50000, 500, function(v) FLAGS.SkyY = v end)
+    SkySec.Toggle("Sky Farm", "", function(s) FLAGS.SkyFarm = s end)
+
+    local RBS = FT.NewSection("Rebirths")
+    local RebCount = RBS.Label("Rebirths: 0")
+    RBS.Toggle("Auto Rebirth", "", function(s) FLAGS.Rebirth = s end)
+    RBS.Toggle("Auto Size 1", "", function(s) FLAGS.AutoSize1 = s end)
+    RBS.Toggle("Use Target", "Chỉ rebirth khi đủ target", function(s) FLAGS.UseRebirthTarget = s end)
+    RBS.Slider("Target Rebirths", "", 100, 0, function(v) FLAGS.AutoRebirthTarget = v end)
+
+    local ExS = FT.NewSection("Auto Exercises")
+    ExS.Dropdown("Exercise", {"pushUp", "sitUp", "handstand"}, function(v) FLAGS.Exercise = v end)
+    ExS.Toggle("Start Exercising", "", function(s) FLAGS.AutoExercise = s end)
+
+    local RkS = FT.NewSection("Glitching / Rock")
+    RkS.Dropdown("Rock", {"Jungle Rock", "Muscle King Rock", "Legends Rock", "Infernal Rock"}, function(v) FLAGS.Rock = v end)
+    RkS.Toggle("Auto Rock", "", function(s) FLAGS.AutoRock = s end)
+
+    local BSS = FT.NewSection("Better Strength Farming")
+    BSS.Toggle("Pushup + Jungle Rock", "", function(s) FLAGS.PushupJungleRock = s end)
+    BSS.Toggle("Pushup + Muscle King Rock", "", function(s) FLAGS.PushupMuscleKingRock = s end)
+    BSS.Toggle("Pushup + Legends Rock", "", function(s) FLAGS.PushupLegendsRock = s end)
+
+    local WSec = FT.NewSection("Auto Workout")
+    WSec.Toggle("Auto Weight", "Đấm rock", function(s) FLAGS.AutoWeight = s end)
+    WSec.Toggle("Auto Push Ups", "", function(s) FLAGS.AutoPushUps = s end)
+    WSec.Toggle("Auto Sit Ups", "", function(s) FLAGS.AutoSitUps = s end)
+    WSec.Toggle("Auto Handstands", "", function(s) FLAGS.AutoHandstands = s end)
+
+    local XS = FT.NewSection("Auto Crystal")
+    XS.TextBox("Crystal", "Blue Crystal", function(v) if v~="" then FLAGS.CrystalName = v end end)
+    XS.Toggle("Auto Buy Crystal", "", function(s) FLAGS.AutoCrystal = s end)
+
+    local SS2 = FT.NewSection("Auto Sell")
+    SS2.Toggle("Auto Sell All", "", function(s) FLAGS.AutoSell = s end)
+
+    local US = FT.NewSection("Auto Upgrade")
+    US.Toggle("Auto Upgrade Strength", "", function(s) FLAGS.AutoUpgradeStrength = s end)
+    US.Toggle("Auto Upgrade Durability", "", function(s) FLAGS.AutoUpgradeDurability = s end)
+    US.Toggle("Auto Upgrade Agility", "", function(s) FLAGS.AutoUpgradeAgility = s end)
+
+    local GS2 = FT.NewSection("Auto Gym")
+    GS2.Dropdown("Gym", {"Muscle King Gym", "Jungle Gym", "Legends Gym", "Infernal Gym", "Mythical Gym"}, function(v) FLAGS.GymName = v end)
+    GS2.Toggle("Auto Change Gym", "", function(s) FLAGS.AutoGym = s end)
+
+    local BES = FT.NewSection("Boost Eater")
+    BES.Toggle("Eat All Eggs", "", function(s) FLAGS.EatAllEggs = s end)
+    BES.Toggle("Eat All Boosts", "", function(s) FLAGS.EatAllBoosts = s end)
+
+    local PSS = FT.NewSection("Pet Shop")
+    PSS.Dropdown("Pet", {"Dog", "Cat", "Bear", "Dragon"}, function(v) FLAGS.SelectedPet = v end)
+    PSS.Toggle("Buy Pet", "", function(s) FLAGS.BuyPet = s end)
+
+    local AUS = FT.NewSection("Auras")
+    AUS.Dropdown("Aura", {"Red", "Blue", "Gold", "Rainbow"}, function(v) FLAGS.SelectedAura = v end)
+    AUS.Toggle("Buy Aura", "", function(s) FLAGS.BuyAura = s end)
+
+    local GFPS = FT.NewSection("Egg Gifter (Protein)")
+    GFPS.TextBox("Player", "Tên", function(v) FLAGS.GiftProteinTarget = v end)
+    GFPS.TextBox("Amount", "Số lượng", function(v) FLAGS.GiftProteinAmount = tonumber(v) or 0 end)
+    GFPS.Toggle("Start Gifting Protein", "", function(s) FLAGS.GiftProtein = s end)
+
+    local GFSS = FT.NewSection("Shake Gifter")
+    GFSS.TextBox("Player", "Tên", function(v) FLAGS.GiftShakeTarget = v end)
+    GFSS.TextBox("Amount", "Số lượng", function(v) FLAGS.GiftShakeAmount = tonumber(v) or 0 end)
+    GFSS.Toggle("Start Gifting Shake", "", function(s) FLAGS.GiftShake = s end)
+
+    local GS = FT.NewSection("Auto Gift")
+    GS.Toggle("Auto Collect Gift", "", function(s) FLAGS.AutoCollectGift = s end)
+
+    local GSec = FT.NewSection("Anti Lag")
+    GSec.Button("Anti Lag (all effects)", "", function()
+        for _, v in pairs(game:GetDescendants()) do
+            if v:IsA("ParticleEmitter") or v:IsA("Trail")
+            or v:IsA("Smoke") or v:IsA("Fire") then
+                pcall(function() v.Enabled = false end)
+            end
+        end
+        Notify("Đã tắt hiệu ứng!")
+    end)
+
+    local ST = NewTab("Specs")
+    local SSec = ST.NewSection("Player Stats")
+    local nameLbl = SSec.Label("Name: N/A")
+    local userLbl = SSec.Label("Username: N/A")
+    local strLbl  = SSec.Label("Strength: N/A")
+    local rebLbl  = SSec.Label("Rebirths: N/A")
+    local durLbl  = SSec.Label("Durability: N/A")
+    local agiLbl  = SSec.Label("Agility: N/A")
+    local killLbl = SSec.Label("Kills: N/A")
+    local evLbl   = SSec.Label("Evil Karma: N/A")
+    local gdLbl   = SSec.Label("Good Karma: N/A")
+    local brLbl   = SSec.Label("Brawls: N/A")
+
+    local AdvS = ST.NewSection("Advanced Stats")
+    local ehLbl = AdvS.Label("Enemy Health: N/A")
+    local edLbl = AdvS.Label("Enemy Damage: N/A")
+    local yhLbl = AdvS.Label("Your Health: N/A")
+    local ydLbl = AdvS.Label("Your Damage: N/A")
+    local hkLbl = AdvS.Label("Hits to Kill: N/A")
+
+    local IT = NewTab("Inventory")
+    local ISec = IT.NewSection("Backpack Items")
+    local InvLbl = ISec.Label("Đang đọc...")
+    local EquipLbl = ISec.Label("Equipped: ...")
+
+    local TT = NewTab("Teleports")
+    local TSec = TT.NewSection("Main")
+    local function TP(cf)
+        local h = GetHRP()
+        if h then pcall(function() h.CFrame = cf end) end
+    end
+    TSec.Button("Spawn", "", function() TP(CFrame.new(0, 8, 0)) end)
+    TSec.Button("Tiny Island", "", function() TP(CFrame.new(0, 8, 0)) end)
+    TSec.Button("Main Island", "", function() TP(CFrame.new(100, 8, 100)) end)
+    TSec.Button("Beach", "", function() TP(CFrame.new(500, 8, 500)) end)
+
+    local GymSec = TT.NewSection("Gyms")
+    GymSec.Button("Muscle King Gym", "", function() TP(CFrame.new(-8600, 8, -5700)) end)
+    GymSec.Button("Jungle Gym", "", function() TP(CFrame.new(-1830, 8, 1660)) end)
+    GymSec.Button("Legends Gym", "", function() TP(CFrame.new(4600, 8, -3800)) end)
+    GymSec.Button("Mythical Gym", "", function() TP(CFrame.new(-4000, 8, 4000)) end)
+    GymSec.Button("Eternal Gym", "", function() TP(CFrame.new(-5000, 8, 2000)) end)
+    GymSec.Button("Frost Gym", "", function() TP(CFrame.new(0, 8, -5000)) end)
+    GymSec.Button("Industrial Gym", "", function() TP(CFrame.new(10000, 8, 10000)) end)
+
+    local StT = NewTab("Stats")
+    local ElS = StT.NewSection("Elapsed Time")
+    local TimeLbl = ElS.Label("0d 0h 0m 0s")
+
+    local DSec = StT.NewSection("Debug")
+    DSec.Button("DUMP REMOTES", "", DumpRemotes)
+    DSec.Button("DUMP TOOLS", "", DumpTools)
+
+    local acc = {stats=0, inv=0, rebirth=0, sprint=0, crystal=0, sell=0,
+                 upgrade=0, gym=0, gift=0}
+    track(RS.Heartbeat:Connect(function(dt)
+        if UNLOADED then return end
+        if not SG.Parent then return end
+        local ok, err = pcall(function()
+            acc.sprint = acc.sprint + dt
+            if acc.sprint >= 0.1 then
+                acc.sprint = 0
+                if FLAGS.AutoSprint then
+                    local h = GetHum()
+                    if h then h.WalkSpeed = math.max(FLAGS.SpeedValue, 100) end
+                end
+            end
+
+            ToolFarm(); PunchFarm(); KillAura()
+
+            acc.stats = acc.stats + dt
+            if acc.stats >= 1 then
+                acc.stats = 0
+                local e = tick() - START_TICK
+                local d = math.floor(e/86400)
+                local hh = math.floor((e%86400)/3600)
+                local mm = math.floor((e%3600)/60)
+                local ss = math.floor(e%60)
+                TimeLbl.Text = string.format("%dd %dh %dm %ds", d, hh, mm, ss)
+
+                local stats = LP:FindFirstChild("leaderstats") or LP:FindFirstChild("Stats")
+                if stats then
+                    local function gs(n)
+                        local s = stats:FindFirstChild(n)
+                        return s and s.Value or "N/A"
+                    end
+                    strLbl.Text = "Strength: "..tostring(gs("Strength"))
+                    rebLbl.Text = "Rebirths: "..tostring(gs("Rebirths"))
+                    durLbl.Text = "Durability: "..tostring(gs("Durability"))
+                    agiLbl.Text = "Agility: "..tostring(gs("Agility"))
+                    killLbl.Text = "Kills: "..tostring(gs("Kills"))
+                    evLbl.Text = "Evil Karma: "..tostring(gs("Evil Karma") or gs("EvilKarma"))
+                    gdLbl.Text = "Good Karma: "..tostring(gs("Good Karma") or gs("GoodKarma"))
+                    brLbl.Text = "Brawls: "..tostring(gs("Brawls"))
+                    RebCount.Text = "Rebirths: "..tostring(gs("Rebirths"))
+                end
+                nameLbl.Text = "Name: "..LP.DisplayName
+                userLbl.Text = "Username: "..LP.Name
+
+                local hum = GetHum()
+                if hum then
+                    yhLbl.Text = "Your Health: "..math.floor(hum.Health).."/"..math.floor(hum.MaxHealth)
+                end
+                local target = GetPlayerFromName(FLAGS.SelectedPlayer)
+                if target and target.Character then
+                    local th = target.Character:FindFirstChildOfClass("Humanoid")
+                    if th then
+                        ehLbl.Text = "Enemy Health: "..math.floor(th.Health).."/"..math.floor(th.MaxHealth)
+                    end
+                end
+            end
+
+            acc.rebirth = acc.rebirth + dt
+            if acc.rebirth >= 5 then
+                acc.rebirth = 0
+                local canRebirth = true
+                if FLAGS.UseRebirthTarget and FLAGS.AutoRebirthTarget > 0 then
+                    local stats = LP:FindFirstChild("leaderstats") or LP:FindFirstChild("Stats")
+                    if stats then
+                        local r = stats:FindFirstChild("Rebirths")
+                        if r and r.Value < FLAGS.AutoRebirthTarget then
+                            canRebirth = false
+                        end
+                    end
+                end
+                if FLAGS.Rebirth and canRebirth then
+                    Fire(GetRebirthRemote(), "rebirthRequest")
+                end
+                if FLAGS.AutoSize1 then
+                    local c = GetChar()
+                    if c then pcall(function() c:ScaleTo(0.1) end) end
+                end
+            end
+
+            acc.crystal = acc.crystal + dt
+            if acc.crystal >= 0.5 then
+                acc.crystal = 0
+                if FLAGS.AutoCrystal then
+                    Fire(GetCrystalRemote(), "openCrystalRequest", FLAGS.CrystalName)
+                end
+            end
+
+            acc.sell = acc.sell + dt
+            if acc.sell >= 2 then
+                acc.sell = 0
+                if FLAGS.AutoSell then
+                    Fire(GetSellRemote(), "sellAll", "all")
+                    Fire(GetSellRemote())
+                end
+            end
+
+            acc.upgrade = acc.upgrade + dt
+            if acc.upgrade >= 1 then
+                acc.upgrade = 0
+                local ur = GetUpgradeRemote()
+                if ur then
+                    if FLAGS.AutoUpgradeStrength then Fire(ur, "upgradeRequest", "Strength") end
+                    if FLAGS.AutoUpgradeDurability then Fire(ur, "upgradeRequest", "Durability") end
+                    if FLAGS.AutoUpgradeAgility then Fire(ur, "upgradeRequest", "Agility") end
+                end
+            end
+
+            acc.gym = acc.gym + dt
+            if acc.gym >= 5 then
+                acc.gym = 0
+                if FLAGS.AutoGym then
+                    Fire(GetGymRemote(), "changeGymRequest", FLAGS.GymName)
+                end
+            end
+
+            acc.gift = acc.gift + dt
+            if acc.gift >= 10 then
+                acc.gift = 0
+                if FLAGS.AutoCollectGift then Fire(GetGiftRemote()) end
+            end
+
+            acc.inv = acc.inv + dt
+            if acc.inv >= 1.5 then
+                acc.inv = 0
+                local bp = LP:FindFirstChild("Backpack")
+                local char = GetChar()
+                local bag, eq = {}, {}
+                if bp then
+                    for _, v in pairs(bp:GetChildren()) do
+                        if v:IsA("Tool") then table.insert(bag, v.Name) end
+                    end
+                end
+                if char then
+                    for _, v in pairs(char:GetChildren()) do
+                        if v:IsA("Tool") then table.insert(eq, v.Name) end
+                    end
+                end
+                InvLbl.Text = "Backpack ("..#bag.."): "..table.concat(bag, ", ")
+                EquipLbl.Text = "Equipped: "..table.concat(eq, ", ")
+            end
+        end)
+        if not ok then warn("[KhoiFarm loop] "..tostring(err)) end
+    end))
+
+    track(LP.CharacterAdded:Connect(function()
+        task.wait(1)
+        if UNLOADED then return end
+        local h = GetHRP()
+        if h and FLAGS.LockPos then h.Anchored = true end
+        if FLAGS.AutoSprint then
+            local hum = GetHum()
+            if hum then hum.WalkSpeed = math.max(FLAGS.SpeedValue, 100) end
+        else
+            local hum = GetHum()
+            if hum then hum.WalkSpeed = FLAGS.SpeedValue end
+        end
+        lastPunch = 0; lastTool = 0; lastKill = 0
+    end))
+
+    StartAntiAFK()
+    Notify("KhoiFarm loaded! Key: "..TargetKey)
+end
+
+local function MakeKeyUI()
+    local SG = Instance.new("ScreenGui")
+    SG.Name = "KhoiFarmKeyUI"
+    SG.ResetOnSpawn = false
+    SG.DisplayOrder = 999
+    local okp = pcall(function() SG.Parent = CG end)
+    if not okp then SG.Parent = LP:WaitForChild("PlayerGui") end
+
+    local MF = Instance.new("Frame", SG)
+    MF.Size = UDim2.new(0, 400, 0, 320)
+    MF.Position = UDim2.new(0.5, -200, 0.5, -160)
+    MF.BackgroundColor3 = Color3.fromRGB(15,15,15)
+    MF.BorderSizePixel = 0
+    MF.Active = true
+    Instance.new("UICorner", MF).CornerRadius = UDim.new(0, 12)
+    local MS = Instance.new("UIStroke", MF)
+    MS.Color = Color3.fromRGB(255,0,0); MS.Thickness = 2
+    MakeDraggable(MF)
+
+    local T = Instance.new("TextLabel", MF)
+    T.Size = UDim2.new(0.8,0,0.15,0); T.Position = UDim2.new(0.1,0,0.05,0)
+    T.BackgroundColor3 = Color3.fromRGB(30,0,0)
+    T.TextColor3 = Color3.fromRGB(255,50,50)
+    T.Text = "KhoiFarm Loader"
+    T.Font = Enum.Font.GothamBold; T.TextSize = 24
+    Instance.new("UICorner", T).CornerRadius = UDim.new(0, 8)
+
+    local XBtn = Instance.new("TextButton", MF)
+    XBtn.Size = UDim2.new(0,30,0,30); XBtn.Position = UDim2.new(0.9,0,0.05,0)
+    XBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+    XBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    XBtn.Text = "X"; XBtn.Font = Enum.Font.GothamBold; XBtn.TextSize = 14
+    Instance.new("UICorner", XBtn).CornerRadius = UDim.new(1, 0)
+    XBtn.MouseButton1Click:Connect(function() SG:Destroy() end)
+
+    local KB = Instance.new("TextBox", MF)
+    KB.Size = UDim2.new(0.8,0,0.15,0); KB.Position = UDim2.new(0.1,0,0.3,0)
+    KB.BackgroundColor3 = Color3.fromRGB(30,30,30)
+    KB.TextColor3 = Color3.fromRGB(255,255,255)
+    KB.PlaceholderText = "Enter the Key..."
+    KB.Text = ""
+    KB.Font = Enum.Font.Gotham; KB.TextSize = 16
+    Instance.new("UICorner", KB).CornerRadius = UDim.new(0, 8)
+
+    local MB = Instance.new("TextButton", MF)
+    MB.Size = UDim2.new(0.8,0,0.15,0); MB.Position = UDim2.new(0.1,0,0.55,0)
+    MB.BackgroundColor3 = Color3.fromRGB(255,0,0)
+    MB.TextColor3 = Color3.fromRGB(255,255,255)
+    MB.Text = "Main Script"
+    MB.Font = Enum.Font.GothamBold; MB.TextSize = 16
+    Instance.new("UICorner", MB).CornerRadius = UDim.new(0, 8)
+
+    local FB = Instance.new("TextButton", MF)
+    FB.Size = UDim2.new(0.8,0,0.15,0); FB.Position = UDim2.new(0.1,0,0.75,0)
+    FB.BackgroundColor3 = Color3.fromRGB(150,0,0)
+    FB.TextColor3 = Color3.fromRGB(255,255,255)
+    FB.Text = "Farming Script"
+    FB.Font = Enum.Font.GothamBold; FB.TextSize = 16
+    Instance.new("UICorner", FB).CornerRadius = UDim.new(0, 8)
+
+    local FL = Instance.new("TextLabel", MF)
+    FL.Size = UDim2.new(0.8,0,0.05,0); FL.Position = UDim2.new(0.1,0,0.92,0)
+    FL.BackgroundTransparency = 1
+    FL.TextColor3 = Color3.fromRGB(150,150,150)
+    FL.Text = "Make by AduAnhKhoi"
+    FL.Font = Enum.Font.Gotham; FL.TextSize = 12
+
+    local checking = false
+    local function Check()
+        if checking then return end
+        checking = true
+        if KB.Text == TargetKey then
+            SG:Destroy()
+            task.wait(0.1)
+            local ok, err = pcall(MakeUI)
+            if not ok then warn("[KhoiFarm] Error: "..tostring(err)) end
+        else
+            KB.Text = "Sai Key!"
+            KB.TextColor3 = Color3.fromRGB(255,0,0)
+            task.wait(1)
+            KB.Text = ""
+            KB.TextColor3 = Color3.fromRGB(255,255,255)
+        end
+        checking = false
+    end
+    MB.MouseButton1Click:Connect(Check)
+    FB.MouseButton1Click:Connect(Check)
+end
+
+local ok, err = pcall(MakeKeyUI)
+if not ok then warn("[KhoiFarm] LỖI: "..tostring(err)) end
